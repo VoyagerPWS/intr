@@ -1,0 +1,777 @@
+#!/usr/bin/env python3
+#
+# tasks.py -- Task stack tracker, main view
+# CGI script for Apache. Reads freely, writes require HTTP Basic Auth.
+#
+# This code was generated with Claude, which is an Artificial Intelligence
+# service provided by Anthropic. Though design and development was
+# orchestrated by a human, reviewed by a human and tested by a human,
+# most of the actual code was composed by an AI.
+#
+# It is completely reasonable to forbid AI generated software in some
+# contexts.  Please check the contribution guidelines of any projects you
+# participate in. If the project has a rule against AI generated software
+# then DO NOT INCLUDE THIS FILE, in whole or in part, in your patches
+# or pull requests!
+
+# All data are stored as JSON files, here's an overview of the `tasks.json`
+# structure:
+# 
+# ```json
+# {
+#    "current":      { "id": "...", "name": "...", "notes": "...", "created_at": "..." },
+#    "idle_active":  false,
+#    "idle_notes":   "",
+#    "queue":        [ { "id": "...", "name": "...", "notes": "...", "created_at": "..." } ]
+# }
+# 
+# 
+# `queue[0]` is the highest priority waiting task.  `current` is what is being
+# worked on right now.  When `idle_active` is true the Idle state is active and
+# `current` is null.
+# 
+# `done_YYYY.json` is a flat array of completed task objects, each with
+# `name`, `notes`, `created_at`, and `completed_at` fields.
+#
+# The banners are embedded directly in the Python source as string constants
+# so no external image files need to be found at run-time.  They are also
+# standalone in case you'd like to edit them and re-insert into the sources.
+
+import cgi
+import cgitb
+import json
+import os
+import sys
+import html
+import uuid
+from datetime import datetime, timezone
+
+cgitb.enable()
+
+# --- Config ---
+# Adjust these paths to match your deployment.
+TASKS_FILE = '/var/www/taskdata/tasks.json'
+DONE_DIR   = '/var/www/taskdata'
+
+# ---------------------------------------------------------------------------
+# Data model
+#
+# tasks.json structure:
+# {
+#   "current": {id, name, notes, created_at} | null,
+#   "idle_notes": "string",
+#   "idle_active": true|false,
+#   "queue": [ {id, name, notes, created_at}, ... ]
+# }
+#
+# "current" is the task being actively worked on.
+# "idle_active" true means Idle is the current state (no task selected).
+# "queue" is the ordered priority list, index 0 = highest priority.
+# ---------------------------------------------------------------------------
+
+def load_tasks():
+	if not os.path.exists(TASKS_FILE):
+		return {"current": None, "idle_notes": "", "idle_active": True, "queue": []}
+	with open(TASKS_FILE, 'r') as f:
+		return json.load(f)
+
+def save_tasks(data):
+	os.makedirs(os.path.dirname(TASKS_FILE), exist_ok=True)
+	tmp = TASKS_FILE + '.tmp'
+	with open(tmp, 'w') as f:
+		json.dump(data, f, indent='\t')
+	os.replace(tmp, TASKS_FILE)
+
+def done_file():
+	year = datetime.now().year
+	return os.path.join(DONE_DIR, f'done_{year}.json')
+
+def load_done():
+	path = done_file()
+	if not os.path.exists(path):
+		return []
+	with open(path, 'r') as f:
+		return json.load(f)
+
+def save_done(entries):
+	os.makedirs(DONE_DIR, exist_ok=True)
+	path = done_file()
+	tmp = path + '.tmp'
+	with open(tmp, 'w') as f:
+		json.dump(entries, f, indent='\t')
+	os.replace(tmp, path)
+
+def new_task(name, notes):
+	return {
+		"id": str(uuid.uuid4()),
+		"name": name.strip(),
+		"notes": notes.strip(),
+		"created_at": datetime.now(timezone.utc).isoformat()
+	}
+
+def is_authenticated():
+	# Apache sets REMOTE_USER when HTTP auth succeeds.
+	return bool(os.environ.get('REMOTE_USER'))
+
+def duration_str(created_at_iso):
+	# Human-readable time-in-stack from ISO timestamp to now.
+	try:
+		created = datetime.fromisoformat(created_at_iso)
+		if created.tzinfo is None:
+			created = created.replace(tzinfo=timezone.utc)
+		delta = datetime.now(timezone.utc) - created
+		days = delta.days
+		if days == 0:
+			hours = delta.seconds // 3600
+			return f"{hours}h" if hours else "<1h"
+		elif days < 14:
+			return f"{days}d"
+		elif days < 60:
+			return f"{days // 7}w"
+		else:
+			return f"{days // 30}mo"
+	except Exception:
+		return "?"
+
+def h(s):
+	# HTML-escape a string.
+	return html.escape(str(s) if s else '', quote=True)
+
+# ---------------------------------------------------------------------------
+# Handle POST actions (all require auth)
+# ---------------------------------------------------------------------------
+
+def handle_post(form, data):
+	if not is_authenticated():
+		print("Status: 403 Forbidden\r")
+		print("Content-Type: text/plain\r\n\r")
+		print("Authentication required for write operations.")
+		return
+
+	action = form.getvalue('action', '')
+
+	if action == 'push':
+		name  = form.getvalue('name', '').strip()
+		notes = form.getvalue('notes', '').strip()
+		pos   = form.getvalue('pos', 'top')
+		if not name:
+			redirect(); return
+		task = new_task(name, notes)
+		if pos == 'top':
+			# New task becomes current; old current goes to top of queue.
+			if data['current'] and not data['idle_active']:
+				data['queue'].insert(0, data['current'])
+			data['current'] = task
+			data['idle_active'] = False
+		elif pos == 'second':
+			data['queue'].insert(0, task)
+		else:
+			data['queue'].append(task)
+
+	elif action == 'grab':
+		# Move a queue item to current; old current returns to top of queue.
+		idx = int(form.getvalue('idx', -1))
+		if 0 <= idx < len(data['queue']):
+			grabbed = data['queue'].pop(idx)
+			if data['current'] and not data['idle_active']:
+				data['queue'].insert(0, data['current'])
+			data['current'] = grabbed
+			data['idle_active'] = False
+
+	elif action == 'complete':
+		# Complete current task: log to done file, promote queue head.
+		if data['current'] and not data['idle_active']:
+			entry = dict(data['current'])
+			entry['completed_at'] = datetime.now(timezone.utc).isoformat()
+			done = load_done()
+			done.append(entry)
+			save_done(done)
+		if data['queue']:
+			data['current'] = data['queue'].pop(0)
+			data['idle_active'] = False
+		else:
+			data['current'] = None
+			data['idle_active'] = True
+
+	elif action == 'complete_queue':
+		# Complete a task sitting in the queue without grabbing it first.
+		idx = int(form.getvalue('idx', -1))
+		if 0 <= idx < len(data['queue']):
+			task = data['queue'].pop(idx)
+			entry = dict(task)
+			entry['completed_at'] = datetime.now(timezone.utc).isoformat()
+			done = load_done()
+			done.append(entry)
+			save_done(done)
+
+	elif action == 'drop':
+		# Delete a queue task permanently (no done log entry).
+		idx = int(form.getvalue('idx', -1))
+		if 0 <= idx < len(data['queue']):
+			data['queue'].pop(idx)
+
+	elif action == 'drop_current':
+		# Delete the current task without logging it.
+		if data['queue']:
+			data['current'] = data['queue'].pop(0)
+			data['idle_active'] = False
+		else:
+			data['current'] = None
+			data['idle_active'] = True
+
+	elif action == 'move_up':
+		idx = int(form.getvalue('idx', -1))
+		if 1 <= idx < len(data['queue']):
+			data['queue'][idx-1], data['queue'][idx] = data['queue'][idx], data['queue'][idx-1]
+
+	elif action == 'move_down':
+		idx = int(form.getvalue('idx', -1))
+		if 0 <= idx < len(data['queue']) - 1:
+			data['queue'][idx+1], data['queue'][idx] = data['queue'][idx], data['queue'][idx+1]
+
+	elif action == 'edit':
+		# Edit name/notes on a queue task or the current task.
+		target = form.getvalue('target', 'queue')
+		name   = form.getvalue('name', '').strip()
+		notes  = form.getvalue('notes', '').strip()
+		if target == 'current' and data['current']:
+			if name: data['current']['name']  = name
+			data['current']['notes'] = notes
+		elif target == 'idle':
+			data['idle_notes'] = notes
+		else:
+			idx = int(form.getvalue('idx', -1))
+			if 0 <= idx < len(data['queue']):
+				if name: data['queue'][idx]['name']  = name
+				data['queue'][idx]['notes'] = notes
+
+	elif action == 'set_idle':
+		# Park current task back on queue, set state to Idle.
+		if data['current'] and not data['idle_active']:
+			data['queue'].insert(0, data['current'])
+		data['current'] = None
+		data['idle_active'] = True
+
+	save_tasks(data)
+	redirect()
+
+def redirect():
+	script = os.environ.get('SCRIPT_NAME', 'tasks.py')
+	print(f"Status: 303 See Other\r")
+	print(f"Location: {script}\r\n\r")
+
+# ---------------------------------------------------------------------------
+# Render helpers
+# ---------------------------------------------------------------------------
+
+BANNER_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 800 140">
+  <defs>
+    <marker id="sa" viewBox="0 0 10 10" refX="8" refY="5"
+            markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#C9A84C"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <!-- ── SIGNAL LINE ── -->
+  <line x1="0"   y1="105" x2="500" y2="105"
+        stroke="#C9A84C" stroke-width="1.3" opacity="0.4"/>
+  <line x1="0" y1="105" x2="25" y2="105"
+        stroke="#C9A84C" stroke-width="1" opacity="0.15"
+        stroke-dasharray="3 5"/>
+  <line x1="500" y1="105" x2="500" y2="78"
+        stroke="#C9A84C" stroke-width="2" stroke-linecap="round"/>
+  <line x1="500" y1="78" x2="541" y2="78"
+        stroke="#C9A84C" stroke-width="2" stroke-linecap="round"
+        marker-end="url(#sa)"/>
+
+  <!-- ── CHIP (skewY -9, right-side-up, 48px wide) ── -->
+  <g transform="translate(598,60) skewY(-9) translate(-598,-60)">
+
+    <rect x="574" y="12" width="48" height="96" rx="3"
+          fill="#111" stroke="#383838" stroke-width="1"/>
+    <path d="M590 12 Q598 9 606 12" fill="none" stroke="#444" stroke-width="1"/>
+    <circle cx="579" cy="18" r="1.2" fill="#555"/>
+
+    <text x="598" y="93" text-anchor="middle" dominant-baseline="central"
+          font-family="monospace,'Courier New',Courier"
+          font-size="6" font-weight="bold" fill="#C9A84C">INTR ?!</text>
+
+    <!-- left pins 1-17 and 19-20 -->
+    <g stroke="#4a4a4a" stroke-width="1" stroke-linecap="round" fill="none">
+      <polyline points="574,16.0  564,16.0  562,20"/>
+      <polyline points="574,20.5  564,20.5  562,24.5"/>
+      <polyline points="574,25.0  564,25.0  562,29"/>
+      <polyline points="574,29.5  564,29.5  562,33.5"/>
+      <polyline points="574,34.0  564,34.0  562,38"/>
+      <polyline points="574,38.5  564,38.5  562,42.5"/>
+      <polyline points="574,43.0  564,43.0  562,47"/>
+      <polyline points="574,47.5  564,47.5  562,51.5"/>
+      <polyline points="574,52.0  564,52.0  562,56"/>
+      <polyline points="574,56.5  564,56.5  562,60.5"/>
+      <polyline points="574,61.0  564,61.0  562,65"/>
+      <polyline points="574,65.5  564,65.5  562,69.5"/>
+      <polyline points="574,70.0  564,70.0  562,74"/>
+      <polyline points="574,74.5  564,74.5  562,78.5"/>
+      <polyline points="574,79.0  564,79.0  562,83"/>
+      <polyline points="574,83.5  564,83.5  562,87.5"/>
+      <polyline points="574,88.0  564,88.0  562,92"/>
+      <polyline points="574,97.0  564,97.0  562,101"/>
+      <polyline points="574,101.5 564,101.5 562,105.5"/>
+    </g>
+
+    <!-- pin 18: gold, exits left, routes up to signal y=78 -->
+    <polyline points="574,92.5 548,92.5 548,78"
+              fill="none" stroke="#C9A84C" stroke-width="1.8"
+              stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="548" cy="78" r="1.8" fill="#C9A84C"/>
+
+    <!-- right pins 21-40 -->
+    <g stroke="#4a4a4a" stroke-width="1" stroke-linecap="round" fill="none">
+      <polyline points="622,16.0  632,16.0  634,20"/>
+      <polyline points="622,20.5  632,20.5  634,24.5"/>
+      <polyline points="622,25.0  632,25.0  634,29"/>
+      <polyline points="622,29.5  632,29.5  634,33.5"/>
+      <polyline points="622,34.0  632,34.0  634,38"/>
+      <polyline points="622,38.5  632,38.5  634,42.5"/>
+      <polyline points="622,43.0  632,43.0  634,47"/>
+      <polyline points="622,47.5  632,47.5  634,51.5"/>
+      <polyline points="622,52.0  632,52.0  634,56"/>
+      <polyline points="622,56.5  632,56.5  634,60.5"/>
+      <polyline points="622,61.0  632,61.0  634,65"/>
+      <polyline points="622,65.5  632,65.5  634,69.5"/>
+      <polyline points="622,70.0  632,70.0  634,74"/>
+      <polyline points="622,74.5  632,74.5  634,78.5"/>
+      <polyline points="622,79.0  632,79.0  634,83"/>
+      <polyline points="622,83.5  632,83.5  634,87.5"/>
+      <polyline points="622,88.0  632,88.0  634,92"/>
+      <polyline points="622,92.5  632,92.5  634,96.5"/>
+      <polyline points="622,97.0  632,97.0  634,101"/>
+      <polyline points="622,101.5 632,101.5 634,105.5"/>
+    </g>
+
+  </g>
+
+  <!-- ── STICK FIGURES ── -->
+
+  <!-- Figure 0: lying down far left -->
+  <g stroke="#111" stroke-width="1.5" stroke-linecap="round" fill="none">
+    <circle cx="30" cy="103" r="4" fill="#111" stroke="none"/>
+    <line x1="34" y1="104" x2="50" y2="105"/>
+    <line x1="40" y1="104" x2="38" y2="96"/>
+    <line x1="40" y1="104" x2="43" y2="108"/>
+    <line x1="50" y1="105" x2="53" y2="98"/>
+    <line x1="50" y1="105" x2="55" y2="107"/>
+  </g>
+
+  <!-- Figure 1 x=195: hand on chin -->
+  <g stroke="#111" stroke-width="1.5" stroke-linecap="round" fill="none">
+    <circle cx="195" cy="89" r="4.5" fill="#111" stroke="none"/>
+    <line x1="195" y1="93.5" x2="195" y2="103"/>
+    <line x1="195" y1="97"   x2="189" y2="100"/>
+    <line x1="195" y1="97"   x2="201" y2="94"/>
+    <line x1="195" y1="103"  x2="191" y2="111"/>
+    <line x1="195" y1="103"  x2="199" y2="111"/>
+  </g>
+
+  <!-- Figure 2 x=230: shrugging -->
+  <g stroke="#111" stroke-width="1.5" stroke-linecap="round" fill="none">
+    <circle cx="230" cy="88" r="4.5" fill="#111" stroke="none"/>
+    <line x1="230" y1="92.5" x2="230" y2="102"/>
+    <line x1="230" y1="96"   x2="223" y2="92"/>
+    <line x1="230" y1="96"   x2="237" y2="92"/>
+    <line x1="230" y1="102"  x2="226" y2="111"/>
+    <line x1="230" y1="102"  x2="234" y2="111"/>
+  </g>
+
+  <!-- Figure 3 x=265: peering down -->
+  <g stroke="#111" stroke-width="1.5" stroke-linecap="round" fill="none">
+    <circle cx="268" cy="88" r="4.5" fill="#111" stroke="none"/>
+    <line x1="267" y1="92.5" x2="264" y2="102"/>
+    <line x1="266" y1="96"   x2="259" y2="99"/>
+    <line x1="266" y1="96"   x2="272" y2="93"/>
+    <line x1="264" y1="102"  x2="260" y2="111"/>
+    <line x1="264" y1="102"  x2="268" y2="111"/>
+  </g>
+
+  <!-- Figure 4: pusher at x~490, leaning into rising edge -->
+  <g stroke="#111" stroke-width="1.5" stroke-linecap="round" fill="none">
+    <circle cx="492" cy="85" r="4.5" fill="#111" stroke="none"/>
+    <line x1="491" y1="89.5" x2="483" y2="101"/>
+    <line x1="489" y1="93"   x2="499" y2="88"/>
+    <line x1="487" y1="97"   x2="499" y2="94"/>
+    <line x1="483" y1="101"  x2="476" y2="111"/>
+    <line x1="483" y1="101"  x2="485" y2="111"/>
+    <line x1="502" y1="85"   x2="506" y2="83" stroke-width="1" opacity="0.55"/>
+    <line x1="502" y1="89"   x2="507" y2="89" stroke-width="1" opacity="0.55"/>
+    <line x1="502" y1="93"   x2="506" y2="95" stroke-width="1" opacity="0.55"/>
+  </g>
+
+  <!-- ── LABELS ── -->
+  <text x="14" y="30"
+        font-family="monospace,'Courier New',Courier"
+        font-size="16" font-weight="bold" fill="#C9A84C"
+        opacity="0.9">INTR</text>
+  <text x="14" y="50"
+        font-family="monospace,'Courier New',Courier"
+        font-size="8.5" fill="#777"
+        letter-spacing="8">interrupt request pending</text>
+
+</svg>'''
+
+CSS = """
+body {
+	font-family: monospace;
+	font-size: 14px;
+	margin: 0;
+	padding: 0;
+	background: #f4f4f4;
+	color: #111;
+}
+#page {
+	max-width: 860px;
+	margin: 0 auto;
+	padding: 12px 16px;
+}
+h1 { font-size: 16px; margin: 0 0 12px; font-weight: bold; }
+h2 { font-size: 14px; margin: 0 0 8px; font-weight: bold; }
+a { color: #00e; }
+a:visited { color: #551a8b; }
+
+/* Current task box */
+#current-box {
+	border: 2px solid #444;
+	background: #fff;
+	padding: 10px 12px;
+	margin-bottom: 14px;
+}
+#current-box.idle {
+	border-color: #aaa;
+	background: #f9f9f9;
+	color: #555;
+}
+#current-title {
+	font-size: 15px;
+	font-weight: bold;
+	margin-bottom: 4px;
+}
+.task-notes {
+	color: #444;
+	margin: 4px 0 8px;
+	white-space: pre-wrap;
+	font-size: 13px;
+}
+.task-meta {
+	font-size: 11px;
+	color: #777;
+	margin-bottom: 6px;
+}
+
+/* Queue table */
+table {
+	width: 100%;
+	border-collapse: collapse;
+	margin-bottom: 14px;
+}
+th {
+	text-align: left;
+	font-size: 12px;
+	border-bottom: 1px solid #aaa;
+	padding: 3px 6px;
+	background: #e8e8e8;
+}
+td {
+	padding: 4px 6px;
+	border-bottom: 1px solid #ddd;
+	vertical-align: top;
+}
+tr:hover td { background: #f0f0f0; }
+.num { color: #888; font-size: 12px; width: 2em; text-align: right; }
+.taskname { font-weight: bold; }
+.qnotes { font-size: 12px; color: #555; white-space: pre-wrap; }
+.actions { white-space: nowrap; font-size: 12px; }
+.actions form { display: inline; }
+.actions button {
+	font-size: 11px;
+	padding: 1px 5px;
+	cursor: pointer;
+	background: #e8e8e8;
+	border: 1px solid #aaa;
+	margin-right: 2px;
+}
+.actions button:hover { background: #d0d0d0; }
+.btn-warn { background: #fdd !important; border-color: #c88 !important; }
+
+/* Idle row */
+#idle-section {
+	border-top: 1px dashed #aaa;
+	padding-top: 10px;
+	margin-top: 6px;
+	color: #555;
+}
+
+/* Push form */
+#push-form {
+	background: #fff;
+	border: 1px solid #ccc;
+	padding: 10px 12px;
+	margin-bottom: 14px;
+}
+#push-form input[type=text],
+#push-form textarea {
+	width: 100%;
+	font-family: monospace;
+	font-size: 13px;
+	box-sizing: border-box;
+	border: 1px solid #aaa;
+	padding: 3px 5px;
+}
+#push-form textarea { height: 60px; resize: vertical; }
+#push-form label { display: block; margin: 6px 0 2px; font-size: 12px; }
+#push-form .radio-row { margin: 4px 0; font-size: 12px; }
+#push-form .submit-row { margin-top: 8px; }
+#push-form input[type=submit] {
+	padding: 3px 12px;
+	font-size: 13px;
+	cursor: pointer;
+}
+
+/* Edit inline form */
+.edit-form input[type=text],
+.edit-form textarea {
+	font-family: monospace;
+	font-size: 13px;
+	border: 1px solid #aaa;
+	padding: 2px 4px;
+	width: 98%;
+	box-sizing: border-box;
+}
+.edit-form textarea { height: 50px; resize: vertical; }
+
+/* Banner */
+#banner {
+	width: 100%;
+	display: block;
+	margin-bottom: 8px;
+	border-bottom: 1px solid #ccc;
+}
+
+#nav a { margin-right: 12px; }
+
+/* Auth notice */
+#auth-notice {
+	font-size: 11px;
+	color: #888;
+	margin-bottom: 10px;
+}
+"""
+
+def action_form(action, extra_inputs='', label='', btn_class=''):
+	script = os.environ.get('SCRIPT_NAME', 'tasks.py')
+	cls = f' class="{btn_class}"' if btn_class else ''
+	return (f'<form method="post" action="{script}">'
+	        f'<input type="hidden" name="action" value="{action}">'
+	        f'{extra_inputs}'
+	        f'<button type="submit"{cls}>{h(label)}</button>'
+	        f'</form>')
+
+def render_page(data, authenticated, edit_target=None, edit_idx=None, show_push=False):
+	print("Content-Type: text/html; charset=utf-8\r\n\r")
+	script = os.environ.get('SCRIPT_NAME', 'tasks.py')
+	done_script = script.replace('tasks.py', 'done.py')
+
+	print(f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>INTR</title>
+<style>{CSS}</style>
+</head>
+<body>
+<div id="page">
+<div id="banner">{BANNER_SVG}</div>
+<div id="nav">
+  <a href="{h(script)}">Tasks</a>
+  <a href="{h(done_script)}">Done</a>
+</div>
+<div id="auth-notice">{"Logged in as " + h(os.environ.get('REMOTE_USER','')) if authenticated else "Read-only view &mdash; <a href=\"" + h(script) + "?login=1\">log in</a> to make changes"}</div>
+""")
+
+	# --- Current task box ---
+	cur = data.get('current')
+	idle_active = data.get('idle_active', True)
+
+	print('<div id="current-box"' + (' class="idle"' if idle_active or not cur else '') + '>')
+	print('<div style="font-size:11px;color:#888;margin-bottom:4px;">CURRENT TASK</div>')
+
+	if idle_active or not cur:
+		print('<div id="current-title">Idle</div>')
+		idle_notes = data.get('idle_notes', '')
+		if idle_notes:
+			print(f'<div class="task-notes">{h(idle_notes)}</div>')
+		if authenticated:
+			if data['queue']:
+				print('<div class="actions" style="margin-top:6px;">')
+				print(action_form('grab', '<input type="hidden" name="idx" value="0">', 'Grab #1 from queue'))
+				print('</div>')
+	else:
+		if edit_target == 'current' and authenticated:
+			# Inline edit form for current task
+			print(f'<form method="post" action="{h(script)}" class="edit-form">')
+			print('<input type="hidden" name="action" value="edit">')
+			print('<input type="hidden" name="target" value="current">')
+			print(f'<input type="text" name="name" value="{h(cur["name"])}" style="font-size:15px;font-weight:bold;margin-bottom:4px;"><br>')
+			print(f'<textarea name="notes">{h(cur.get("notes",""))}</textarea><br>')
+			print('<input type="submit" value="Save"> ')
+			print(f'<a href="{h(script)}">Cancel</a>')
+			print('</form>')
+		else:
+			print(f'<div id="current-title">{h(cur["name"])}</div>')
+			notes = cur.get('notes', '')
+			if notes:
+				print(f'<div class="task-notes">{h(notes)}</div>')
+			age = duration_str(cur.get('created_at',''))
+			print(f'<div class="task-meta">In stack: {h(age)}</div>')
+			if authenticated:
+				print('<div class="actions">')
+				print(action_form('complete', '', 'Mark done', ''))
+				print(action_form('drop_current', '', 'Drop (no log)', 'btn-warn'))
+				print(action_form('set_idle', '', 'Go idle'))
+				print(f'<a href="{h(script)}?edit=current" style="font-size:12px;">Edit</a>')
+				print('</div>')
+
+	print('</div>') # end current-box
+
+	# --- Push form ---
+	if authenticated:
+		if show_push:
+			print(f'<div id="push-form">')
+			print(f'<form method="post" action="{h(script)}">')
+			print('<input type="hidden" name="action" value="push">')
+			print('<label>Task name</label>')
+			print('<input type="text" name="name" autofocus required>')
+			print('<label>Notes</label>')
+			print('<textarea name="notes"></textarea>')
+			print('<label>Position</label>')
+			print('<div class="radio-row"><label><input type="radio" name="pos" value="top" checked> Push to top (becomes current)</label></div>')
+			print('<div class="radio-row"><label><input type="radio" name="pos" value="second"> Insert at #1 in queue (after current)</label></div>')
+			print('<div class="radio-row"><label><input type="radio" name="pos" value="bottom"> Append to bottom</label></div>')
+			print('<div class="submit-row"><input type="submit" value="Push task"> ')
+			print(f'<a href="{h(script)}">Cancel</a></div>')
+			print('</form></div>')
+		else:
+			print(f'<p><a href="{h(script)}?push=1">&#x25b6; Push new task</a></p>')
+
+	# --- Queue ---
+	queue = data.get('queue', [])
+	print('<h2>Queue</h2>')
+	if not queue:
+		print('<p style="color:#888;font-size:13px;">Queue is empty.</p>')
+	else:
+		print('<table>')
+		print('<tr><th>#</th><th>Task</th><th>Notes</th><th>Age</th><th>Actions</th></tr>')
+		for i, task in enumerate(queue):
+			age = duration_str(task.get('created_at',''))
+			print('<tr>')
+			print(f'<td class="num">{i+1}</td>')
+
+			if edit_target == 'queue' and edit_idx == i and authenticated:
+				print(f'<td colspan="2"><form method="post" action="{h(script)}" class="edit-form">')
+				print(f'<input type="hidden" name="action" value="edit">')
+				print(f'<input type="hidden" name="target" value="queue">')
+				print(f'<input type="hidden" name="idx" value="{i}">')
+				print(f'<input type="text" name="name" value="{h(task["name"])}"><br>')
+				print(f'<textarea name="notes">{h(task.get("notes",""))}</textarea><br>')
+				print('<input type="submit" value="Save"> ')
+				print(f'<a href="{h(script)}">Cancel</a>')
+				print('</form></td>')
+				print(f'<td>{h(age)}</td>')
+				print('<td></td>')
+			else:
+				print(f'<td><span class="taskname">{h(task["name"])}</span></td>')
+				notes = task.get('notes', '')
+				print(f'<td><span class="qnotes">{h(notes)}</span></td>')
+				print(f'<td>{h(age)}</td>')
+				if authenticated:
+					idx_input = f'<input type="hidden" name="idx" value="{i}">'
+					print('<td class="actions">')
+					print(action_form('grab',           idx_input, 'Work on'))
+					print(action_form('complete_queue', idx_input, 'Done'))
+					if i > 0:
+						print(action_form('move_up',   idx_input, '&#x25b2;'))
+					if i < len(queue) - 1:
+						print(action_form('move_down',  idx_input, '&#x25bc;'))
+					print(f'<a href="{h(script)}?edit=queue&idx={i}" style="font-size:11px;">Edit</a> ')
+					print(action_form('drop',           idx_input, 'Drop', 'btn-warn'))
+					print('</td>')
+				else:
+					print('<td></td>')
+
+			print('</tr>')
+		print('</table>')
+
+	# --- Idle ---
+	print('<div id="idle-section">')
+	print('<b>Idle</b>')
+	idle_notes = data.get('idle_notes','')
+	if edit_target == 'idle' and authenticated:
+		print(f'<form method="post" action="{h(script)}" class="edit-form" style="margin-top:4px;">')
+		print('<input type="hidden" name="action" value="edit">')
+		print('<input type="hidden" name="target" value="idle">')
+		print(f'<textarea name="notes">{h(idle_notes)}</textarea><br>')
+		print('<input type="submit" value="Save"> ')
+		print(f'<a href="{h(script)}">Cancel</a>')
+		print('</form>')
+	else:
+		if idle_notes:
+			print(f' &mdash; <span style="font-size:12px;color:#555;">{h(idle_notes)}</span>')
+		if authenticated and not idle_active:
+			print(' &mdash; ')
+			print(action_form('set_idle', '', 'Set idle'))
+		if authenticated:
+			print(f' <a href="{h(script)}?edit=idle" style="font-size:11px;">Edit notes</a>')
+	print('</div>')
+
+	print(f'<p style="font-size:10px;color:#bbb;margin-top:16px;">tasks.py &mdash; {len(queue)} in queue</p>')
+	print('</div></body></html>')
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main():
+	method = os.environ.get('REQUEST_METHOD', 'GET').upper()
+	authenticated = is_authenticated()
+	data = load_tasks()
+
+	if method == 'POST':
+		form = cgi.FieldStorage()
+		handle_post(form, data)
+		return
+
+	# GET
+	qs = os.environ.get('QUERY_STRING', '')
+	params = {}
+	for part in qs.split('&'):
+		if '=' in part:
+			k, v = part.split('=', 1)
+			params[k] = v
+		elif part:
+			params[part] = ''
+
+	edit_target = None
+	edit_idx    = None
+	show_push   = False
+
+	if 'push' in params and authenticated:
+		show_push = True
+	if 'edit' in params and authenticated:
+		edit_target = params['edit']
+		if 'idx' in params:
+			try: edit_idx = int(params['idx'])
+			except ValueError: pass
+
+	render_page(data, authenticated, edit_target, edit_idx, show_push)
+
+main()

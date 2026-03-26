@@ -3,7 +3,7 @@
 # INTR
 
 A single-user task tracker for people with more work than time.  Named after
-the interrupt request pin on the Intel 8088 — because something is always
+the interrupt request pin on the Intel 8088 — because *something* is always
 driving that pin high.
 
 The queue is priority-ordered top to bottom, but tasks don't have to be

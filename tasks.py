@@ -788,9 +788,9 @@ def render_page(data, authenticated, edit_target=None, edit_idx=None, show_push=
 			print(f'<div class="task-meta">In stack: {h(age)}</div>')
 			if authenticated:
 				print('<div class="actions">')
-				print(action_form('complete', '', 'Mark done', ''))
-				print(danger_form('drop_current', '', 'Drop (no log)', 'Drop current task without logging?'))
-				print(action_form('set_idle', '', 'Go idle'))
+				print(action_form('complete', '', 'IRET (mark done)', ''))
+				print(danger_form('drop_current', '', 'NOP (drop)', 'Drop current task without logging?'))
+				print(action_form('set_idle', '', 'STI HLT (idle)'))
 				print(f'<a href="{h(script)}?edit=current" style="font-size:12px;">Edit</a>')
 				print('</div>')
 
@@ -816,7 +816,7 @@ def render_page(data, authenticated, edit_target=None, edit_idx=None, show_push=
 			print(f'<a href="{h(script)}">Cancel</a></div>')
 			print('</form></div>')
 		else:
-			print(f'<p><a href="{h(script)}?push=1">&#x25b6; Push new task</a></p>')
+			print(f'<p><a href="{h(script)}?push=1">&#x25b6; PUSH (new task)</a></p>')
 
 	# --- Idle ---
 	print('<div id="idle-section">')
@@ -835,7 +835,7 @@ def render_page(data, authenticated, edit_target=None, edit_idx=None, show_push=
 			print(f' &mdash; <span style="font-size:12px;color:#555;">{h(idle_notes)}</span>')
 		if authenticated and not idle_active:
 			print(' &mdash; ')
-			print(action_form('set_idle', '', 'Set idle'))
+			print(action_form('set_idle', '', 'STI HLT (idle)'))
 		if authenticated:
 			print(f' <a href="{h(script)}?edit=idle" style="font-size:11px;">Edit notes</a>')
 	print('</div>')
@@ -845,7 +845,7 @@ def render_page(data, authenticated, edit_target=None, edit_idx=None, show_push=
 	queue = data.get('queue', [])
 	print('<h2>Queue</h2>')
 	if not queue:
-		print('<p style="color:#888;font-size:13px;">Queue is empty.</p>')
+		print('<p style="color:#888;font-size:13px;">No pending interrupts.</p>')
 	else:
 		print('<table>')
 		print('<tr><th>#</th><th>Task</th><th>Notes</th><th>Age</th><th>Actions</th></tr>')
@@ -877,14 +877,14 @@ def render_page(data, authenticated, edit_target=None, edit_idx=None, show_push=
 				if authenticated:
 					idx_input = f'<input type="hidden" name="idx" value="{i}">'
 					print('<td class="actions">')
-					print(action_form('grab',           idx_input, 'Work on'))
-					print(action_form('complete_queue', idx_input, 'Done'))
+					print(action_form('grab',           idx_input, 'CALL (work on)'))
+					print(action_form('complete_queue', idx_input, 'IRET (done)'))
 					if i > 0:
 						print(action_form('move_up',   idx_input, '&#x25b2;'))
 					if i < len(queue) - 1:
 						print(action_form('move_down',  idx_input, '&#x25bc;'))
 					print(f'<a href="{h(script)}?edit=queue&idx={i}" style="font-size:11px;">Edit</a> ')
-					print(danger_form('drop', idx_input, 'Drop', 'Drop this task without logging?'))
+					print(danger_form('drop', idx_input, 'NOP', 'Drop this task without logging?'))
 					print('</td>')
 				else:
 					print('<td></td>')

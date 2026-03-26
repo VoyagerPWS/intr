@@ -183,14 +183,14 @@ scripts check it before acting on any write operation.
 
 | Action | Description |
 |--------|-------------|
-| Push new task | Add a task at the top (becomes current), at position #2, or at the bottom |
-| Work on | Grab any queued task — it becomes current, old current returns to top of queue |
+| PUSH | Add a task at the top (becomes current), at position #2, or at the bottom |
+| CALL | Grab any queued task — it becomes current, old current returns to top of queue |
 | ▲ / ▼ | Nudge a task up or down in the queue without touching the current task |
-| Mark done | Completes the current task, logs it to `done_YYYY.json`, promotes the next queued task |
-| Done (from queue) | Complete a queued task without grabbing it first |
-| Drop | Delete a task permanently with no log entry |
+| IRET | Completes the current task, logs it to `done_YYYY.json`, promotes the next queued task |
+| IRET (from queue) | Complete a queued task without grabbing it first |
+| NOP | Delete a task permanently with no log entry |
 | Edit | Edit the name or notes of any task inline |
-| Set idle | Parks the current task back at the top of the queue, sets state to Idle (HLT) |
+| STI HLK | Parks the current task back at the top of the queue, go Idle pending an interrupt |
 
 All write actions require HTTP Basic Auth.  Read access is open.
 

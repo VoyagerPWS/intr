@@ -190,7 +190,7 @@ scripts check it before acting on any write operation.
 | IRET (from queue) | Complete a queued task without grabbing it first |
 | NOP | Delete a task permanently with no log entry |
 | Edit | Edit the name or notes of any task inline |
-| STI HLK | Parks the current task back at the top of the queue, go Idle pending an interrupt |
+| STI HLT | Parks the current task back at the top of the queue, go Idle pending an interrupt |
 
 All write actions require HTTP Basic Auth.  Read access is open.
 

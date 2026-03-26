@@ -30,16 +30,21 @@ done.py             Completed task archive (CGI script)
 
 There are no external configuration files.  
 
-To configure for your site, adjust these two path constants in `tasks.py` and `done.py`:
+To configure for your site, adjust path and URL constants in `tasks.py` and `done.py`.
+Set them to what ever you like, but the values entered here must be consistent with
+the ScriptAlias lines in your Apache config
 
 ```python
+TASKS_SCRIPT_NAME = 'intr'    # External end-point name from apache config below
+DONE_SCRIPT_NAME = 'handled'  # External end-point name from apache config below
 TASKS_FILE = '/var/www/taskdata/tasks.json'
 DONE_DIR   = '/var/www/taskdata'
 ```
 
 All task data are contained in JSON files. This not the most efficent but
 easier then setting up an external RDBMS.  Pick a directory that you prefer
-that's **not** under the web root, for example:
+that's **not** under the web root, for example `/var/www/taskdata`.  In that
+case the layout will look similar to the following after data are entered.
 
 ```
 /var/www/taskdata/
@@ -48,8 +53,6 @@ that's **not** under the web root, for example:
     done_2025.json      Previous years accumulate here automatically
     ...
 ```
-
-and edit `tasks.py` and `done.py`.
 
 At year-end, `done_YYYY.json` stays in place and a new file is created for
 the incoming year.  The done page auto-detects all `done_*.json` files in the
@@ -78,12 +81,12 @@ sudo systemctl restart apache2
 
 ```bash
 chmod 755 /path/to/tasks.py /path/to/done.py
-ln -s /path/to/tasks.py /var/www/cgi-me/tasks.py
-ln -s /path/to/done.py  /var/www/cgi-me/done.py
+ln -s /path/to/tasks.py /var/www/cgi-bin/tasks.py   # or just copy them in
+ln -s /path/to/done.py  /var/www/cgi-bin/done.py
 ```
 
-`/var/www/cgi-me/` is the script directory used in the example Apache config
-below.  Adjust to taste.
+`/var/www/cgi-bin/` is the script directory used in the example Apache config
+below.  Adjust to taste.  
 
 ### 3. Create the data directory
 
@@ -104,12 +107,12 @@ Add the following inside your `<VirtualHost>` block:
 
 ```apache
 # Both paths serve from the same script directory.
-# /cgi-me/      -> open to all (GET)
-# /cgi-me-auth/ -> requires Basic Auth (POST target)
-ScriptAlias /cgi-me/      "/var/www/cgi-me/"
-ScriptAlias /cgi-me-auth/ "/var/www/cgi-me/"
+# /cgi-bin/      -> open to all (GET)
+# /cgi-bin-auth/ -> requires Basic Auth (POST target)
+ScriptAlias /cgi-bin/      "/var/www/cgi-bin/"
+ScriptAlias /cgi-bin-auth/ "/var/www/cgi-bin/"
 
-<Directory "/var/www/cgi-me">
+<Directory "/var/www/cgi-bin">
     Options +ExecCGI +FollowSymLinks
     AddHandler cgi-script .py
     Require ip 127.0.0.1 ::1
@@ -118,14 +121,14 @@ ScriptAlias /cgi-me-auth/ "/var/www/cgi-me/"
 
 # Rewrite POSTs to the auth-protected path.
 # Scoped to just these two scripts; other CGI is unaffected.
-<LocationMatch "^/cgi-me/(tasks|done)\.py$">
+<LocationMatch "^/cgi-bin/(tasks|done)\.py$">
     RewriteEngine On
     RewriteCond %{REQUEST_METHOD} POST
-    RewriteRule ^/cgi-me/(tasks|done)\.py$ /cgi-me-auth/$1.py [PT,L]
+    RewriteRule ^/cgi-bin/(tasks|done)\.py$ /cgi-bin-auth/$1.py [PT,L]
 </LocationMatch>
 
 # Auth gate for the POST target.
-<Location "/cgi-me-auth/">
+<Location "/cgi-bin-auth/">
     AuthType Basic
     AuthName "INTR"
     AuthUserFile /etc/apache2/taskstack.passwd
@@ -144,7 +147,7 @@ sudo chown root:www-data /etc/apache2/taskstack.passwd
 sudo chmod 640 /etc/apache2/taskstack.passwd
 ```
 
-After this, `GET /cgi-me/tasks.py` is open to anyone matching the `Require`
+After this, `GET /cgi-bin/tasks.py` is open to anyone matching the `Require`
 directives in the `Directory` block.  POST requests trigger a Basic Auth
 challenge.  `REMOTE_USER` is set by Apache after a successful login and the
 scripts check it before acting on any write operation.

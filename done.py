@@ -23,7 +23,29 @@ from datetime import datetime, timezone, timedelta
 
 cgitb.enable()
 
-DONE_DIR = '/var/www/taskdata'
+# ########################################################################### #
+# configuration #
+
+TASKS_FILE = '/var/www/taskdata/tasks.json'    # <-- current state of insanity
+DONE_DIR   = '/var/www/taskdata'         # <-- Memorial for adventures of yore
+
+# Extern names of scripts. Needed for cross links
+#
+#   ScriptAlias /some/url/path/tasks            "/var/www/cgi-bin/tasks.py"
+#   ScriptAlias /some/url/path/intr-auth/tasks  "/var/www/cgi-bin/tasks.py"
+#
+#   ScriptAlias /some/url/path/done            "/var/www/cgi-bin/done.py"
+#   ScriptAlias /some/url/path/intr-auth/done  "/var/www/cgi-bin/done.py"
+#
+#  So in the case above TASK_PATH_TOK would be "tasks" and the done token
+#  would be "done".  I prefer to use 'intr' and 'handled', so that's what's
+#  in the readme.
+
+TASKS_SCRIPT_NAME = 'intr'
+DONE_SCRIPT_NAME = 'handled'
+
+# ########################################################################### #
+# helpers #
 
 def h(s):
 	return html.escape(str(s) if s else '', quote=True)
@@ -78,6 +100,8 @@ def duration_str(created_iso, completed_iso):
 			return f"{days // 30}mo"
 	except Exception:
 		return "?"
+
+# ########################################################################### #
 
 BANNER_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 800 140">
   <defs>
@@ -276,7 +300,12 @@ tr:hover td { background: #f0f0f0; }
 #year-select { font-size: 13px; margin-bottom: 12px; }
 """
 
+# ########################################################################### #
+
 def main():
+
+	#print("\r\n\r")
+
 	qs = os.environ.get('QUERY_STRING', '')
 	params = {}
 	for part in qs.split('&'):
@@ -313,8 +342,8 @@ def main():
 	# Sort weeks newest first, tasks within week newest first.
 	sorted_weeks = sorted(weeks.items(), key=lambda x: x[0], reverse=True)
 
-	tasks_script = os.environ.get('SCRIPT_NAME', 'done.py').replace('done.py', 'tasks.py')
-	done_script  = os.environ.get('SCRIPT_NAME', 'done.py')
+	done_script  = os.environ.get('SCRIPT_NAME')
+	tasks_script = done_script.replace(DONE_SCRIPT_NAME, TASKS_SCRIPT_NAME, 1)
 
 	print("Content-Type: text/html; charset=utf-8\r\n\r")
 	print(f"""<!DOCTYPE html>

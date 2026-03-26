@@ -47,13 +47,29 @@ from datetime import datetime, timezone
 
 cgitb.enable()
 
-# --- Config ---
-# Adjust these paths to match your deployment.
-TASKS_FILE = '/var/www/taskdata/tasks.json'
-DONE_DIR   = '/var/www/taskdata'
+# ########################################################################### #
+# configuration #
 
-# ---------------------------------------------------------------------------
-# Data model
+TASKS_FILE = '/var/www/taskdata/tasks.json'    # <-- current state of insanity
+DONE_DIR   = '/var/www/taskdata'         # <-- Memorial for adventures of yore
+
+# Tokens to help the two scripts link to each other, assuming same relative path
+#
+#   ScriptAlias /some/url/path/tasks            "/var/www/cgi-bin/tasks.py"
+#   ScriptAlias /some/url/path/intr-auth/tasks  "/var/www/cgi-bin/tasks.py"
+#
+#   ScriptAlias /some/url/path/done            "/var/www/cgi-bin/done.py"
+#   ScriptAlias /some/url/path/intr-auth/done  "/var/www/cgi-bin/done.py"
+#
+#  So in the case above TASK_PATH_TOK would be "tasks" and the done token
+#  would be "done".  I prefer to use 'intr' and 'handled', so that's what's
+#  in the readme.
+
+TASKS_SCRIPT_NAME = 'intr'
+DONE_SCRIPT_NAME = 'handled'
+
+# ########################################################################### #
+# Operation and Data model
 #
 # tasks.json structure:
 # {
@@ -66,7 +82,6 @@ DONE_DIR   = '/var/www/taskdata'
 # "current" is the task being actively worked on.
 # "idle_active" true means Idle is the current state (no task selected).
 # "queue" is the ordered priority list, index 0 = highest priority.
-# ---------------------------------------------------------------------------
 
 def load_tasks():
 	if not os.path.exists(TASKS_FILE):
@@ -136,9 +151,8 @@ def h(s):
 	# HTML-escape a string.
 	return html.escape(str(s) if s else '', quote=True)
 
-# ---------------------------------------------------------------------------
-# Handle POST actions (all require auth)
-# ---------------------------------------------------------------------------
+# ########################################################################### #
+# Handle POST actions (all require auth) #
 
 def handle_post(form, data):
 	if not is_authenticated():
@@ -255,13 +269,12 @@ def handle_post(form, data):
 	redirect()
 
 def redirect():
-	script = os.environ.get('SCRIPT_NAME', 'tasks.py')
+	script = os.environ.get('SCRIPT_NAME', 'tasks')
 	print(f"Status: 303 See Other\r")
 	print(f"Location: {script}\r\n\r")
 
-# ---------------------------------------------------------------------------
-# Render helpers
-# ---------------------------------------------------------------------------
+# ########################################################################### #
+# Embedded Image #
 
 BANNER_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 800 140">
   <defs>
@@ -565,8 +578,11 @@ tr:hover td { background: #f0f0f0; }
 }
 """
 
+# ########################################################################### #
+# Render helpers #
+
 def action_form(action, extra_inputs='', label='', btn_class=''):
-	script = os.environ.get('SCRIPT_NAME', 'tasks.py')
+	script = os.environ.get('SCRIPT_NAME', 'tasks')
 	cls = f' class="{btn_class}"' if btn_class else ''
 	return (f'<form method="post" action="{script}">'
 	        f'<input type="hidden" name="action" value="{action}">'
@@ -576,8 +592,14 @@ def action_form(action, extra_inputs='', label='', btn_class=''):
 
 def render_page(data, authenticated, edit_target=None, edit_idx=None, show_push=False):
 	print("Content-Type: text/html; charset=utf-8\r\n\r")
-	script = os.environ.get('SCRIPT_NAME', 'tasks.py')
-	done_script = script.replace('tasks.py', 'done.py')
+	script = os.environ.get('SCRIPT_NAME')
+	done_script = script.replace(TASKS_SCRIPT_NAME, DONE_SCRIPT_NAME, 1)
+
+	if authenticated:
+		auth_notice = f'Logged in as {h(os.environ.get("REMOTE_USER",""))}'
+	else:
+		login_url = script.replace(TASKS_SCRIPT_NAME, f'intr-auth/{TASKS_SCRIPT_NAME}')
+		auth_notice = f'Read-only view &mdash; <a href="{h(login_url)}">log in</a> to make changes'
 
 	print(f"""<!DOCTYPE html>
 <html lang="en">
@@ -593,7 +615,7 @@ def render_page(data, authenticated, edit_target=None, edit_idx=None, show_push=
   <a href="{h(script)}">Tasks</a>
   <a href="{h(done_script)}">Done</a>
 </div>
-<div id="auth-notice">{"Logged in as " + h(os.environ.get('REMOTE_USER','')) if authenticated else "Read-only view &mdash; <a href=\"" + h(script) + "?login=1\">log in</a> to make changes"}</div>
+<div id="auth-notice">{auth_notice}</div>
 """)
 
 	# --- Current task box ---
@@ -731,15 +753,16 @@ def render_page(data, authenticated, edit_target=None, edit_idx=None, show_push=
 			print(f' <a href="{h(script)}?edit=idle" style="font-size:11px;">Edit notes</a>')
 	print('</div>')
 
-	print(f'<p style="font-size:10px;color:#bbb;margin-top:16px;">tasks.py &mdash; {len(queue)} in queue</p>')
+	print(f'<p style="font-size:10px;color:#bbb;margin-top:16px;">tasks &mdash; {len(queue)} in queue</p>')
 	print('</div></body></html>')
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
+# ########################################################################### #
 
 def main():
+
+	#print("\r\n\r")
+
 	method = os.environ.get('REQUEST_METHOD', 'GET').upper()
 	authenticated = is_authenticated()
 	data = load_tasks()

@@ -1,3 +1,5 @@
+![People pushing INTR high](intr-banner.svg)
+
 # INTR
 
 A single-user task tracker for people with more work than time.  Named after

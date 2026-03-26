@@ -186,8 +186,7 @@ a firewall this is generally acceptable for a single-user tool, but check your
 local web-service security guidelines before making assumptions.
 
 
-## AI disclosure
-
+**AI disclosure**
 > This code was generated in cooperation with Claude, which is an Artificial 
 > Intelligence service provided by Anthropic. Though design and development was
 > orchestrated by a human, reviewed by a human and tested by a human, most of 

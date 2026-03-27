@@ -14,10 +14,26 @@ Only you can change anything.
 
 ![Task page screenshot](img/screenshot.png)
 
-## Requirements
+## Try it out!
+
+If you don't feel like deploying to Apache or any other host, just run
+```bash
+git clone git@github.com:cpiker/intr.git
+cd intr
+python3.7 serve.py  # Or higher python version
+```
+then open your browser to:
+```
+http://localhost:8080/intr
+```
+and let the task data pile up in the git working copy.  If you decide
+you like it, deployment instructions follow.  You can copy the JSON files
+from your home directory up to the server.
+
+## Deployment Requirements
 
 - Apache 2.4 with `mod_cgi` and `mod_rewrite`
-- Python 3 (stdlib only — no third-party packages)
+- Python >= 3.7 (stdlib only — no third-party packages)
 - A machine on a trusted internal network
 
 ## Configuration

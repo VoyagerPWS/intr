@@ -53,8 +53,11 @@ from datetime import datetime, timezone
 # ########################################################################### #
 # configuration #
 
-TASKS_FILE = '/var/www/taskdata/tasks.json'    # <-- current state of insanity
-DONE_DIR   = '/var/www/taskdata'         # <-- Memorial for adventures of yore
+# current state of insanity
+TASKS_FILE = os.environ.get('INTR_TASKS_FILE', '/var/www/taskdata/tasks.json')
+
+# Memorial for adventures of yore
+DONE_DIR   = os.environ.get('INTR_DONE_DIR',   '/var/www/taskdata')
 
 # Tokens to help the two scripts link to each other, assuming same relative path
 #

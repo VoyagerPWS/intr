@@ -24,8 +24,11 @@ from datetime import datetime, timezone, timedelta
 # ########################################################################### #
 # configuration #
 
-TASKS_FILE = '/var/www/taskdata/tasks.json'    # <-- current state of insanity
-DONE_DIR   = '/var/www/taskdata'         # <-- Memorial for adventures of yore
+# current state of insanity
+TASKS_FILE = os.environ.get('INTR_TASKS_FILE', '/var/www/taskdata/tasks.json')
+
+# Memorial for adventures of yore
+DONE_DIR   = os.environ.get('INTR_DONE_DIR',   '/var/www/taskdata')
 
 # Extern names of scripts. Needed for cross links
 #
@@ -410,7 +413,7 @@ def main():
 				comp_str  = dt.strftime('%a %b %d')
 				age       = duration_str(entry.get('created_at',''), entry.get('completed_at',''))
 				print(f'<tr>')
-				print(f'<td class="taskname">{h(name)}{label_badge(task_label)}</td>')
+				print(f'<td class="taskname">{label_badge(task_label)}{h(name)}</td>')
 				print(f'<td class="date-col">{h(comp_str)}</td>')
 				print(f'<td class="age-col">{h(age)}</td>')
 				print(f'</tr>')

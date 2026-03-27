@@ -173,6 +173,55 @@ def duration_str(created_at_iso):
 	except Exception:
 		return "?"
 
+def seconds_to_str(secs):
+	# Human-readable duration from a raw second count.
+	if secs < 60:
+		return "<1m"
+	elif secs < 3600:
+		return f"{secs // 60}m"
+	days = secs // 86400
+	if days == 0:
+		return f"{secs // 3600}h"
+	elif days < 14:
+		return f"{days}d"
+	elif days < 60:
+		return f"{days // 7}w"
+	else:
+		return f"{days // 30}mo"
+
+def task_active_seconds(task):
+	# Total seconds a task has spent in the current slot, including the
+	# ongoing activation if active_since is set.  Returns 0 for tasks
+	# that have never been made current (queue-only tasks).
+	total = task.get('time_active', 0)
+	active_since = task.get('active_since')
+	if active_since:
+		try:
+			t = datetime.fromisoformat(active_since)
+			if t.tzinfo is None:
+				t = t.replace(tzinfo=timezone.utc)
+			total += int((datetime.now(timezone.utc) - t).total_seconds())
+		except Exception:
+			pass
+	return total
+
+def activate_task(task):
+	# Stamp active_since on a task entering the current slot.
+	task['active_since'] = datetime.now(timezone.utc).isoformat()
+
+def deactivate_task(task):
+	# Accumulate active time and clear active_since when leaving current slot.
+	active_since = task.pop('active_since', None)
+	if active_since:
+		try:
+			t = datetime.fromisoformat(active_since)
+			if t.tzinfo is None:
+				t = t.replace(tzinfo=timezone.utc)
+			elapsed = int((datetime.now(timezone.utc) - t).total_seconds())
+			task['time_active'] = task.get('time_active', 0) + elapsed
+		except Exception:
+			pass
+
 def h(s):
 	# HTML-escape a string.
 	return html.escape(str(s) if s else '', quote=True)
@@ -219,8 +268,10 @@ def handle_post(form, data):
 		if pos == 'top':
 			# New task becomes current; old current goes to top of queue.
 			if data['current'] and not data['idle_active']:
+				deactivate_task(data['current'])
 				data['queue'].insert(0, data['current'])
 			data['current'] = task
+			activate_task(data['current'])
 			data['idle_active'] = False
 		elif pos == 'second':
 			data['queue'].insert(0, task)
@@ -233,13 +284,16 @@ def handle_post(form, data):
 		if 0 <= idx < len(data['queue']):
 			grabbed = data['queue'].pop(idx)
 			if data['current'] and not data['idle_active']:
+				deactivate_task(data['current'])
 				data['queue'].insert(0, data['current'])
 			data['current'] = grabbed
+			activate_task(data['current'])
 			data['idle_active'] = False
 
 	elif action == 'complete':
 		# Complete current task: log to done file, promote queue head.
 		if data['current'] and not data['idle_active']:
+			deactivate_task(data['current'])
 			entry = dict(data['current'])
 			entry['completed_at'] = datetime.now(timezone.utc).isoformat()
 			done = load_done()
@@ -247,6 +301,7 @@ def handle_post(form, data):
 			save_done(done)
 		if data['queue']:
 			data['current'] = data['queue'].pop(0)
+			activate_task(data['current'])
 			data['idle_active'] = False
 		else:
 			data['current'] = None
@@ -254,6 +309,7 @@ def handle_post(form, data):
 
 	elif action == 'complete_queue':
 		# Complete a task sitting in the queue without grabbing it first.
+		# Queue tasks have never been active, so time_active stays 0.
 		idx = int(form.getvalue('idx', -1))
 		if 0 <= idx < len(data['queue']):
 			task = data['queue'].pop(idx)
@@ -264,15 +320,30 @@ def handle_post(form, data):
 			save_done(done)
 
 	elif action == 'drop':
-		# Delete a queue task permanently (no done log entry).
+		# Abandon a queue task: log to done with abandoned=True.
 		idx = int(form.getvalue('idx', -1))
 		if 0 <= idx < len(data['queue']):
-			data['queue'].pop(idx)
+			task = data['queue'].pop(idx)
+			entry = dict(task)
+			entry['completed_at'] = datetime.now(timezone.utc).isoformat()
+			entry['abandoned'] = True
+			done = load_done()
+			done.append(entry)
+			save_done(done)
 
 	elif action == 'drop_current':
-		# Delete the current task without logging it.
+		# Abandon the current task: log to done with abandoned=True.
+		if data['current'] and not data['idle_active']:
+			deactivate_task(data['current'])
+			entry = dict(data['current'])
+			entry['completed_at'] = datetime.now(timezone.utc).isoformat()
+			entry['abandoned'] = True
+			done = load_done()
+			done.append(entry)
+			save_done(done)
 		if data['queue']:
 			data['current'] = data['queue'].pop(0)
+			activate_task(data['current'])
 			data['idle_active'] = False
 		else:
 			data['current'] = None
@@ -319,6 +390,7 @@ def handle_post(form, data):
 	elif action == 'set_idle':
 		# Park current task back on queue, set state to Idle.
 		if data['current'] and not data['idle_active']:
+			deactivate_task(data['current'])
 			data['queue'].insert(0, data['current'])
 		data['current'] = None
 		data['idle_active'] = True
@@ -587,6 +659,18 @@ tr:hover td { background: #f0f0f0; }
 }
 .actions button:hover { background: #d0d0d0; }
 .btn-warn { background: #fdd !important; border-color: #c88 !important; }
+
+/* Abandoned badge in done list */
+.abandoned-badge {
+	display: inline-block;
+	font-size: 10px;
+	padding: 1px 5px;
+	background: #eee;
+	color: #888;
+	border-radius: 2px;
+	margin-left: 4px;
+	vertical-align: middle;
+}
 .btn-link {
 	display: inline-block;
 	font-size: 11px;
@@ -799,15 +883,17 @@ def render_page(data, authenticated, edit_target=None, edit_idx=None, show_push=
 			print(danger_form('drop_current', '', 'NOP (drop, no log)', 'Drop current task without logging?'))
 		else:
 			cur_label = cur.get('label', '')
-			print(f'<div id="current-title">{h(cur["name"])}{label_badge(cur_label)}</div>')
+			print(f'<div id="current-title">{label_badge(cur_label)}{h(cur["name"])}</div>')
 			notes = cur.get('notes', '')
 			if notes:
 				print(f'<div class="task-notes">{h(notes)}</div>')
 			age = duration_str(cur.get('created_at',''))
-			print(f'<div class="task-meta">In stack: {h(age)}</div>')
+			active_secs = task_active_seconds(cur)
+			active_str  = seconds_to_str(active_secs) if active_secs else '0m'
+			print(f'<div class="task-meta">In stack: {h(age)} &mdash; Active: {active_str}</div>')
 			if authenticated:
 				print('<div class="actions">')
-				print(action_form('complete', '', 'IRET (mark done)', ''))
+				print(action_form('complete', '', 'IRET', ''))
 				print(action_form('set_idle', '', 'STI HLT (idle)'))
 				print(f'<a href="{h(script)}?edit=current" class="btn-link">Edit</a>')
 				print('</div>')
@@ -866,7 +952,8 @@ def render_page(data, authenticated, edit_target=None, edit_idx=None, show_push=
 		print('<p style="color:#888;font-size:13px;">No pending interrupts.</p>')
 	else:
 		print('<table>')
-		print('<tr><th>#</th><th>Task</th><th>Notes</th><th>Age</th><th>Actions</th></tr>')
+		actions_th = '<th>Actions</th>' if authenticated else ''
+		print(f'<tr><th>#</th><th>Task</th><th>Notes</th><th>Age</th><th>Active</th>{actions_th}</tr>')
 		for i, task in enumerate(queue):
 			age = duration_str(task.get('created_at',''))
 			print('<tr>')
@@ -888,25 +975,28 @@ def render_page(data, authenticated, edit_target=None, edit_idx=None, show_push=
 				print('</form></td>')
 				print(f'<td>{h(age)}</td>')
 				print('<td></td>')
+				print('<td></td>')
 			else:
 				task_label = task.get('label', '')
 				print(f'<td>{label_badge(task_label)} <span class="taskname">{h(task["name"])}</span></td>')
 				notes = task.get('notes', '')
 				print(f'<td><span class="qnotes">{h(notes)}</span></td>')
 				print(f'<td>{h(age)}</td>')
+				active_secs = task.get('time_active', 0)
+				active_str  = seconds_to_str(active_secs) if active_secs else '&mdash;'
+				print(f'<td class="age-col">{active_str}</td>')
 				if authenticated:
 					idx_input = f'<input type="hidden" name="idx" value="{i}">'
 					print('<td class="actions">')
-					print(action_form('grab',           idx_input, 'CALL (work on)'))
-					print(action_form('complete_queue', idx_input, 'IRET (done)'))
+					print(action_form('grab',           idx_input, 'CALL'))
+					print(action_form('complete_queue', idx_input, 'IRET'))
 					if i > 0:
 						print(action_form('move_up',   idx_input, '&#x25b2;'))
 					if i < len(queue) - 1:
 						print(action_form('move_down',  idx_input, '&#x25bc;'))
 					print(f'<a href="{h(script)}?edit=queue&idx={i}" class="btn-link">Edit</a>')
 					print('</td>')
-				else:
-					print('<td></td>')
+				# no actions cell in read-only view
 
 			print('</tr>')
 		print('</table>')

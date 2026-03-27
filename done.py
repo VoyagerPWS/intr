@@ -108,6 +108,22 @@ def duration_str(created_iso, completed_iso):
 	except Exception:
 		return "?"
 
+def seconds_to_str(secs):
+	# Human-readable duration from a raw second count.
+	if secs < 60:
+		return "<1m"
+	elif secs < 3600:
+		return f"{secs // 60}m"
+	days = secs // 86400
+	if days == 0:
+		return f"{secs // 3600}h"
+	elif days < 14:
+		return f"{days}d"
+	elif days < 60:
+		return f"{days // 7}w"
+	else:
+		return f"{days // 30}mo"
+
 # ########################################################################### #
 
 BANNER_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 800 140">
@@ -321,6 +337,20 @@ tr:hover td { background: #f0f0f0; }
 	vertical-align: middle;
 	white-space: nowrap;
 }
+
+/* Abandoned task indicator */
+.abandoned-badge {
+	display: inline-block;
+	font-size: 10px;
+	padding: 1px 5px;
+	background: #eee;
+	color: #888;
+	border-radius: 2px;
+	margin-left: 4px;
+	vertical-align: middle;
+}
+tr.abandoned td { color: #aaa; }
+tr.abandoned .taskname { font-weight: normal; }
 """
 
 # ########################################################################### #
@@ -405,17 +435,24 @@ def main():
 			count = len(week['tasks'])
 			print(f'<h2>{week["label"]} <span class="week-count">{count} task{"s" if count != 1 else ""}</span></h2>')
 			print('<table>')
-			print('<tr><th>Task</th><th>Completed</th><th>Time in stack</th></tr>')
+			print('<tr><th>Task</th><th>Completed</th><th>In stack</th><th>Active</th></tr>')
 			# Newest first within week
 			for dt, entry in sorted(week['tasks'], key=lambda x: x[0], reverse=True):
-				name      = entry.get('name', '(unnamed)')
+				name       = entry.get('name', '(unnamed)')
 				task_label = entry.get('label', '')
-				comp_str  = dt.strftime('%a %b %d')
-				age       = duration_str(entry.get('created_at',''), entry.get('completed_at',''))
-				print(f'<tr>')
-				print(f'<td class="taskname">{label_badge(task_label)}{h(name)}</td>')
+				abandoned  = entry.get('abandoned', False)
+				comp_str   = dt.strftime('%a %b %d')
+				age        = duration_str(entry.get('created_at',''), entry.get('completed_at',''))
+				active_secs = entry.get('time_active', 0)
+				active_str  = seconds_to_str(active_secs) if active_secs else '&mdash;'
+				row_class  = ' class="abandoned"' if abandoned else ''
+				print(f'<tr{row_class}>')
+				# Name cell: label badge + name + abandoned marker
+				abandoned_badge = '<span class="abandoned-badge">NOP</span>' if abandoned else ''
+				print(f'<td class="taskname">{label_badge(task_label)}{h(name)}{abandoned_badge}</td>')
 				print(f'<td class="date-col">{h(comp_str)}</td>')
 				print(f'<td class="age-col">{h(age)}</td>')
+				print(f'<td class="age-col">{active_str}</td>')
 				print(f'</tr>')
 			print('</table>')
 

@@ -158,51 +158,64 @@ There's a million ways to configure Apache.  This is just an example.
     # 3. ScriptAlias maps the rewritten URL to the same filesystem path
     # 4. Location "/intr-auth/" matches the rewritten URL, requires auth
     # 5. Directory applies ExecCGI and access controls to the filesystem path
-    
-    # 1: Which URLs triggers which scripts
-    #  
+ 
+    # 1: Which URLs trigger which scripts
+    #
     #    Make sure the corresponding TASKS_SCRIPT_NAME & DONE_SCRIPT_NAME
     #    values are set in tasks.py and done.py
     <IfModule alias_module>
-        ScriptAlias /intr                "/var/www/cgi-me/tasks.py"
-        ScriptAlias /handled             "/var/www/cgi-me/done.py"
-        ScriptAlias /intr-auth/intr      "/var/www/cgi-me/tasks.py"
-        ScriptAlias /intr-auth/handled   "/var/www/cgi-me/done.py"
+        ScriptAlias /intr                "/var/www/cgi-bin/tasks.py"
+        ScriptAlias /handled             "/var/www/cgi-bin/done.py"
+        ScriptAlias /intr-auth/intr      "/var/www/cgi-bin/tasks.py"
+        ScriptAlias /intr-auth/handled   "/var/www/cgi-bin/done.py"
     </IfModule>
-    
+ 
     # 2: If any of the end-points listed above use the POST method,
-    #    rewrite the URL and add a fictitious sub-directory.
+    #    rewrite the URL to add a fictitious sub-directory.
     #
-    #    Since the location is new, it's going to re-trigger the
-    #    ScriptAlais lookup above.
+    #    Since the location is new, it re-triggers the ScriptAlias
+    #    lookup above, landing on the same script via the /intr-auth/
+    #    aliases defined in step 1.
     <LocationMatch "^/(intr|handled)$">
         RewriteEngine On
         RewriteCond %{REQUEST_METHOD} POST
         RewriteRule ^/(intr|handled)$ /intr-auth/$1 [PT,L]
     </LocationMatch>
-    
-    # 3 (4 if POST): Selective Authentication
+ 
+    # 3 (4 if POST): Selective authentication
     #
-    # If our fictitious sub-directory is detected, require authentication
+    #    If the fictitious sub-directory is detected, require authentication.
+    #    Only POST requests reach here; GETs go directly to step 4/5.
     <Location "/intr-auth/">
         AuthType Basic
         AuthName "Interrupt Request Pending"
         AuthUserFile /etc/apache2/taskstack.passwd
         Require valid-user
     </Location>
-
-
-    # 4 (5 if POST): Access control 
+ 
+    # 4 (5 if POST): Access control
     #
-    #   Regardless of the URL or request method, apply these
-    #   access controls to the on-disk assests
-    <Directory "/var/www/cgi-me">
-        Options ExecCGI FollowSymLinks
+    #    Regardless of URL or request method, apply these access controls
+    #    to the on-disk assets.
+    #
+    #    RequireAny means a request satisfying EITHER condition is allowed.
+    #    Without this wrapper, Apache 2.4 treats multiple Require directives
+    #    as RequireAll -- meaning a request would have to originate from
+    #    localhost AND a .uiowa.edu host simultaneously, which is never true.
+    #
+    #    Note: "Require host" triggers a reverse DNS lookup on every request.
+    #    If latency is a concern, replace with "Require ip <VPN subnet CIDR>"
+    #    e.g. Require ip 10.0.0.0/8
+    <Directory "/var/www/cgi-bin">
+        Options ExecCGI
         AddHandler cgi-script .py
-        Require ip 127.0.0.1 ::1
-        Require host .uiowa.edu
+        AllowOverride None
+        <RequireAny>
+            Require ip 127.0.0.1 ::1
+            Require host .uiowa.edu
+        </RequireAny>
     </Directory>
-```
+ ```
 Adjust the `Require ip` and `Require host` lines to match the networks and
 domains you want to allow read access from.
 

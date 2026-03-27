@@ -584,6 +584,19 @@ tr:hover td { background: #f0f0f0; }
 }
 .actions button:hover { background: #d0d0d0; }
 .btn-warn { background: #fdd !important; border-color: #c88 !important; }
+.btn-link {
+	display: inline-block;
+	font-size: 11px;
+	padding: 4px 8px;
+	cursor: pointer;
+	background: #e8e8e8;
+	border: 1px solid #aaa;
+	margin-right: 2px;
+	text-decoration: none;
+	color: #111;
+}
+.btn-link:visited { color: #111; }
+.btn-link:hover { background: #d0d0d0; }
 
 /* Label badge */
 .label-badge {
@@ -778,7 +791,7 @@ def render_page(data, authenticated, edit_target=None, edit_idx=None, show_push=
 			if labels:
 				print(f'<label style="font-size:11px;">Label: {label_select(labels, cur.get("label",""))}</label><br>')
 			print('<input type="submit" value="Save"> ')
-			print(f'<a href="{h(script)}">Cancel</a>')
+			print(f'<a href="{h(script)}" class="btn-link">Cancel</a>')
 			print('</form>')
 			print(danger_form('drop_current', '', 'NOP (drop, no log)', 'Drop current task without logging?'))
 		else:
@@ -793,7 +806,7 @@ def render_page(data, authenticated, edit_target=None, edit_idx=None, show_push=
 				print('<div class="actions">')
 				print(action_form('complete', '', 'IRET (mark done)', ''))
 				print(action_form('set_idle', '', 'STI HLT (idle)'))
-				print(f'<a href="{h(script)}?edit=current" style="font-size:12px;">Edit</a>')
+				print(f'<a href="{h(script)}?edit=current" class="btn-link">Edit</a>')
 				print('</div>')
 
 	print('</div>') # end current-box
@@ -815,7 +828,7 @@ def render_page(data, authenticated, edit_target=None, edit_idx=None, show_push=
 			print('<div class="radio-row"><label><input type="radio" name="pos" value="second"> Insert at #1 in queue (after current)</label></div>')
 			print('<div class="radio-row"><label><input type="radio" name="pos" value="bottom"> Append to bottom</label></div>')
 			print('<div class="submit-row"><input type="submit" value="Push task"> ')
-			print(f'<a href="{h(script)}">Cancel</a></div>')
+			print(f'<a href="{h(script)}" class="btn-link">Cancel</a></div>')
 			print('</form></div>')
 		else:
 			print(f'<p><a href="{h(script)}?push=1">&#x25b6; PUSH (new task)</a></p>')
@@ -830,7 +843,7 @@ def render_page(data, authenticated, edit_target=None, edit_idx=None, show_push=
 		print('<input type="hidden" name="target" value="idle">')
 		print(f'<textarea name="notes">{h(idle_notes)}</textarea><br>')
 		print('<input type="submit" value="Save"> ')
-		print(f'<a href="{h(script)}">Cancel</a>')
+		print(f'<a href="{h(script)}" class="btn-link">Cancel</a>')
 		print('</form>')
 	else:
 		if idle_notes:
@@ -839,7 +852,7 @@ def render_page(data, authenticated, edit_target=None, edit_idx=None, show_push=
 			print(' &mdash; ')
 			print(action_form('set_idle', '', 'STI HLT (idle)'))
 		if authenticated:
-			print(f' <a href="{h(script)}?edit=idle" style="font-size:11px;">Edit notes</a>')
+			print(f' <a href="{h(script)}?edit=idle" class="btn-link">Edit notes</a>')
 	print('</div>')
 
 
@@ -866,7 +879,7 @@ def render_page(data, authenticated, edit_target=None, edit_idx=None, show_push=
 				if labels:
 					print(f'Label: {label_select(labels, task.get("label",""))}<br>')
 				print('<input type="submit" value="Save"> ')
-				print(f'<a href="{h(script)}">Cancel</a> ')
+				print(f'<a href="{h(script)}" class="btn-link">Cancel</a> ')
 				idx_input = f'<input type="hidden" name="idx" value="{i}">'
 				print(danger_form('drop', idx_input, 'NOP (drop, no log)', 'Drop this task without logging?'))
 				print('</form></td>')
@@ -887,7 +900,7 @@ def render_page(data, authenticated, edit_target=None, edit_idx=None, show_push=
 						print(action_form('move_up',   idx_input, '&#x25b2;'))
 					if i < len(queue) - 1:
 						print(action_form('move_down',  idx_input, '&#x25bc;'))
-					print(f'<a href="{h(script)}?edit=queue&idx={i}" style="font-size:11px;">Edit</a>')
+					print(f'<a href="{h(script)}?edit=queue&idx={i}" class="btn-link">Edit</a>')
 					print('</td>')
 				else:
 					print('<td></td>')

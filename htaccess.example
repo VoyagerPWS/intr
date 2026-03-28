@@ -79,8 +79,8 @@ SetEnv INTR_DONE_DIR   /your/data/directory             # <-- CHANGE: directory 
 
 <Files "tasks.py">
     AuthType     Basic
-	 Require ip   10.0.0.0/8               # <-- CHANGE: your internal IP range
     AuthName     "INTR"                   # <-- CHANGE (optional): browser login dialog title
+	Require ip   10.0.0.0/8               # <-- CHANGE: your internal IP range
     AuthUserFile /path/to/intr.htpasswd   # <-- CHANGE: full path to htpasswd file
     <LimitExcept GET HEAD>
         Require valid-user
@@ -90,22 +90,10 @@ SetEnv INTR_DONE_DIR   /your/data/directory             # <-- CHANGE: directory 
 <Files "done.py">
     AuthType     Basic
     AuthName     "INTR"                   # <-- CHANGE (optional): must match above
-	 Require ip 10.0.0.0/8                 # <-- CHANGE: your internal IP range, or use host
+	Require ip 10.0.0.0/8                 # <-- CHANGE: your internal IP range, or use host
     AuthUserFile /path/to/intr.htpasswd   # <-- CHANGE: must match above
     <LimitExcept GET HEAD>
         Require valid-user
     </LimitExcept>
 </Files>
 
-# ---------------------------------------------------------------------------
-# Optional: restrict access to a specific network or IP range
-#
-# If this is an internal tool you may want to limit access to your VPN
-# subnet or office IP range. Uncomment and adjust as needed.
-#
-# <Files "tasks.py">
-#     
-# </Files>
-# <Files "done.py">
-
-# </Files>

@@ -1,99 +1,26 @@
-# .htaccess -- Apache configuration for the INTR task tracker
-#
-# DEPLOYMENT INSTRUCTIONS
-# -----------------------
-# 1. Place this file in the same directory as tasks.py and done.py.
-#
-# 2. Edit every line marked with <-- CHANGE
-#
-# 3. Ensure AllowOverride is enabled in your main Apache config for this
-#    directory. The following directives must be permitted:
-#
-#      AllowOverride Options AuthConfig FileInfo
-#
-#    Ask your Apache admin to verify this if you are unsure.
-#
-# 4. Make the scripts executable:
-#
-#      chmod +x tasks.py done.py
-#
-# 5. Create the data directory and set ownership:
-#
-#      mkdir -p /your/data/directory                    # <-- CHANGE: data directory path
-#      chown www-data:www-data /your/data/directory     # <-- CHANGE: Apache process user
-#      chmod 750 /your/data/directory                   #     (typically www-data or apache)
-#
-# 6. Create the htpasswd file for authentication:
-#
-#      htpasswd -c /path/to/intr.htpasswd yourusername  # <-- CHANGE: path and username
-#
-#    Store the htpasswd file OUTSIDE the web root so it cannot be
-#    downloaded by a browser.  Add more users by repeating the command
-#    without the -c flag.
-#
-# 7. Reload Apache:
-#
-#      systemctl reload apache2     (Debian/Ubuntu)
-#      systemctl reload httpd       (RHEL/CentOS)
-#
-# ---------------------------------------------------------------------------
-# URL NOTE
-#
-# Unlike a VirtualHost config, .htaccess does not support ScriptAlias, so
-# URLs will include the .py extension:
-#
-#   http://yourserver/path/to/tasks.py      <-- main task queue (read-only)
-#   http://yourserver/path/to/done.py       <-- completed archive (read-only)
-#
-# You must update the script name constants in BOTH tasks.py and done.py
-# to match these URLs.  Find these lines near the top of each file:
-#
-#   TASKS_SCRIPT_NAME = 'intr'     <-- change to 'tasks.py'
-#   DONE_SCRIPT_NAME  = 'handled'  <-- change to 'done.py'
-#
-# ---------------------------------------------------------------------------
-# CGI execution
+# Adjust /path/to/application everywhere below as appropriate
+# /path/to/application/.htaccess
 
 Options +ExecCGI
 AddHandler cgi-script .py
 
-# ---------------------------------------------------------------------------
-# Data file locations
-#
-# Override the default hardcoded paths in tasks.py and done.py via
-# environment variables.  Set these to match the directory you created
-# in step 5 above.
+SetEnv INTR_TASKS_FILE "/path/to/application/data/tasks.json"
+SetEnv INTR_DONE_DIR   "/path/to/application/data"
 
-SetEnv INTR_TASKS_FILE /your/data/directory/tasks.json  # <-- CHANGE: full path to tasks.json
-SetEnv INTR_DONE_DIR   /your/data/directory             # <-- CHANGE: directory for done_YYYY.json files
-
-# ---------------------------------------------------------------------------
-# Authentication
-#
-# Write operations (POST) are gated by HTTP Basic Auth.  Read-only GET
-# requests to tasks.py and done.py require no credentials.
-#
-# The strategy: protect both scripts with auth but exempt GET and HEAD
-# requests, so casual browsing is open while any state-changing action
-# requires a valid login.
-
-<Files "tasks.py">
-    AuthType     Basic
-    AuthName     "INTR"                   # <-- CHANGE (optional): browser login dialog title
-	Require ip   10.0.0.0/8               # <-- CHANGE: your internal IP range
-    AuthUserFile /path/to/intr.htpasswd   # <-- CHANGE: full path to htpasswd file
-    <LimitExcept GET HEAD>
-        Require valid-user
-    </LimitExcept>
-</Files>
-
-<Files "done.py">
-    AuthType     Basic
-    AuthName     "INTR"                   # <-- CHANGE (optional): must match above
-	Require ip 10.0.0.0/8                 # <-- CHANGE: your internal IP range, or use host
-    AuthUserFile /path/to/intr.htpasswd   # <-- CHANGE: must match above
-    <LimitExcept GET HEAD>
-        Require valid-user
-    </LimitExcept>
-</Files>
-
+<FilesMatch "^(tasks|done)\.py$">
+  AuthType Basic
+  AuthName "INTR Task Tracker"
+  # Even better, feel free to put this one level up
+  AuthUserFile "/path/to/application/.htpasswd"
+  <RequireAll>
+    # Adjust network address range as appropriate
+    Require ip 127.0.0.1 192.168.1.0/24
+    # Authorization logic
+    <RequireAny>
+      # Allow anonymous GET or HEAD
+      Require expr "%{REQUEST_METHOD} in {'GET','HEAD'} && -z req('Authorization')"
+      # Need valid-user for POST or already logged in
+      Require valid-user
+    </RequireAny>
+  </RequireAll>
+</FilesMatch>

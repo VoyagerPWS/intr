@@ -38,7 +38,7 @@ from your home directory up to the server.
 |--------|-------------|
 | PUSH | Add a task at the top (becomes current), at position #2, or at the bottom |
 | CALL | Grab any queued task \u2014 it becomes current, old current returns to top of queue |
-| \u25b2 / \u25bc | Nudge a task up or down in the queue without touching the current task |
+| ▲ / ▼ | Nudge a task up or down in the queue without touching the current task |
 | IRET | Completes the current task, logs it to `done_YYYY.json`, promotes the next queued task |
 | IRET (from queue) | Complete a queued task without grabbing it first |
 | NOP | Delete a task permanently with no log entry |

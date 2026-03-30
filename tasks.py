@@ -884,17 +884,21 @@ def danger_form(action, extra_inputs='', label='Drop', confirm_msg='Drop this ta
 
 def render_page(data, authenticated, edit_target=None, edit_idx=None, show_push=False):
 	labels = data.get('labels', [])
+	auth_notice = ""
 	print("Content-Type: text/html; charset=utf-8\r\n\r")
 	script = os.environ.get('SCRIPT_NAME')
 	
 	base, _ = script.rsplit('/', 1)
 	done_script = f'{base}/{DONE_SCRIPT_NAME}'
-	login_url   = f'{base}/intr-auth/{TASKS_SCRIPT_NAME}'
 
-	if authenticated:
-		auth_notice = f'Logged in as {h(os.environ.get("REMOTE_USER",""))}'
-	else:
-		auth_notice = f'Read-only view &mdash; <a href="{h(login_url)}">log in</a> to make changes'
+	if not authenticated:
+		auth_notice = (
+		'Read-only view &mdash; '
+		f'<form method="POST" action="{h(script)}" style="display:inline;">'
+		'<input type="hidden" name="action" value="login">'
+		'<button type="submit" style="background:none;border:none;color:blue;text-decoration:underline;cursor:pointer;padding:0;">log in</button>'
+		'</form>'
+	)
 
 	print(f"""<!DOCTYPE html>
 <html lang="en">

@@ -6,8 +6,8 @@ Options +ExecCGI
 SetEnv INTR_TASKS_FILE "/path/to/application/data/tasks.json"
 SetEnv INTR_DONE_DIR   "/path/to/application/data"
 
-<FilesMatch "^(tasks|done)\.py$">
-  AddHandler cgi-script
+<FilesMatch "^(tasks|done)$">
+  SetHandler cgi-script
   AuthType Basic
   AuthName "INTR Task Tracker"
   # Even better, feel free to put this one level up

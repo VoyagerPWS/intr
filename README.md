@@ -68,7 +68,7 @@ Place the scripts in a directory accessible to the web server, and create a
 `data` subdirectory that the web server user (e.g., `www-data` or `apache`)
 can write to.
 
-```bash
+```
 /path/to/application/
 ├── .htaccess
 ├── tasks
@@ -89,7 +89,7 @@ and "/path/to/application" with the actual location.
 # trusted user CGI
 Alias /usercgi /path/to/application
 <Directory "/path/to/application">
-  AllowOverride FileInfo Options AuthConfig Indexes
+  AllowOverride FileInfo Options AuthConfig
   Require all denied
 </Directory>
 ```

@@ -2,15 +2,15 @@
 
 # INTR
 
-A single-user task tracker for people with more work than time. Named after
+A single-user task tracker for people with more work than time.  Named after
 the interrupt request pin on the Intel 8088 — because *something* is always
 driving that pin high.
 
 The queue is priority-ordered top to bottom, but tasks don't have to be
-handled in priority order. You grab whatever makes sense to work on, and the
-top slot shows what you're currently doing. Finished tasks move to a yearly
-done archive. Co-workers can see your queue without logging in. Only you can
-change anything.
+handled in priority order.  You grab whatever makes sense to work on, and
+the top slot shows what you're currently doing.  Finished tasks move to a
+yearly done archive.  Co-workers can see your queue without logging in.
+Only you can change anything.
 
 ![Task page screenshot](img/screenshot.png)
 
@@ -200,9 +200,10 @@ protects write operations, the scripts do not implement CSRF protection.
 Always host the application under HTTPS to protect credentials sent during the
 login process.
 
-**AI disclosure**
+![INTR services or device gave up](img/intr-banner-done-fade.svg)
 
-> This code was generated in cooperation with Claude, which is an Artificial
+**AI disclosure**
+> This code was generated in cooperation with Claude, which is an Artificial 
 > Intelligence service provided by Anthropic. Though design and development was
 > orchestrated by a human, reviewed by a human and tested by a human, most of
 > the actual code was composed by an AI.  The final operating configuration

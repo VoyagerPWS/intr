@@ -32,7 +32,7 @@ from your home directory up to the server.
 
 ## Usage
 
-### Task queue (tasks.py)
+### Task queue (tasks)
 
  Action | Description |
 |--------|-------------|
@@ -47,7 +47,7 @@ from your home directory up to the server.
 
 All write actions require HTTP Basic Auth.  Read access is open.
 
-### Done archive (done.py)
+### Done archive (done)
 
 Completed tasks grouped by ISO calendar week, newest week first.  Columns:
 task name, date completed, time spent in the stack.
@@ -71,8 +71,8 @@ can write to.
 ```bash
 /path/to/application/
 ├── .htaccess
-├── tasks.py
-├── done.py
+├── tasks
+├── done
 └── data/          # Must be writable by the web server
 ```
 
@@ -109,12 +109,12 @@ not to provide access to anything unnecessary.
 # /path/to/application/.htaccess
 
 Options +ExecCGI
-AddHandler cgi-script .py
 
 SetEnv INTR_TASKS_FILE "/path/to/application/data/tasks.json"
 SetEnv INTR_DONE_DIR   "/path/to/application/data"
 
-<FilesMatch "^(tasks|done)\.py$">
+<FilesMatch "^(tasks|done)$">
+  AddHandler cgi-script
   AuthType Basic
   AuthName "INTR Task Tracker"
   # Even better, feel free to put this one level up
@@ -133,6 +133,11 @@ SetEnv INTR_DONE_DIR   "/path/to/application/data"
 </FilesMatch>
 ```
 
+**NOTE:** Since only the two (correctly spelled) scripts are explicitly
+configured to be accessible, any typos will result in `403 Forbidden`
+instead of `404 Not Found` errors.  There is potential for confusion here,
+both on the part of users and people looking at Apache error logs.
+
 ### 4\. Permissions and Authentication
 
 For modularity, these are described as being installed in
@@ -143,7 +148,7 @@ adjacent directory.
 
     ```bash
     cd /path/to/application
-    chmod +x tasks.py done.py
+    chmod +x tasks done
     ```
 
 2.  **Set data directory ownership:**

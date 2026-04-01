@@ -114,7 +114,7 @@ SetEnv INTR_TASKS_FILE "/path/to/application/data/tasks.json"
 SetEnv INTR_DONE_DIR   "/path/to/application/data"
 
 <FilesMatch "^(tasks|done)$">
-  AddHandler cgi-script
+  SetHandler cgi-script
   AuthType Basic
   AuthName "INTR Task Tracker"
   # Even better, feel free to put this one level up

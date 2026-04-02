@@ -141,8 +141,8 @@ both on the part of users and people looking at Apache error logs.
 ### 4\. Permissions and Authentication
 
 For modularity, these are described as being installed in
-"/path/to/application" but for extra security may be elsewhere, perhaps in an
-adjacent directory.
+"/path/to/application" but for extra security the data directory and password
+file may be elsewhere, perhaps in an adjacent directory.
 
 1.  **Make the scripts executable:**
 
@@ -154,7 +154,7 @@ adjacent directory.
 2.  **Set data directory ownership:**
 
     ```bash
-    chgrp www-data /path/to/application/data
+    chgrp www-data /path/to/application/data # or group apache
     chmod 2770 /path/to/application/data
     ```
 
@@ -206,7 +206,8 @@ login process.
 > This code was generated in cooperation with Claude, which is an Artificial
 > Intelligence service provided by Anthropic. Though design and development was
 > orchestrated by a human, reviewed by a human and tested by a human, most of
-> the actual code was composed by an AI.
+> the actual code was composed by an AI.  The final operating configuration
+> and code tweaks were suggested by Google/Gemini as well.
 >
 > It is completely reasonable to forbid AI generated software in some contexts.
 > Please check the contribution guidelines of any projects you participate in.
